@@ -83,18 +83,23 @@ type PipelineNodeLog struct {
 }
 
 // utility function to fill in the Base fields under PipelineRun
-func (run *PipelineRun) update() {
+func (run *PipelineRun) update() error {
 	href := run.URLs["self"]["href"]
 	if matches := baseURLRegex.FindStringSubmatch(href); len(matches) > 1 {
 		run.Base = matches[1]
 	}
 	for i := range run.Stages {
-		run.Stages[i].Run = run
 		href := run.Stages[i].URLs["self"]["href"]
+		if _, err := run.Job.Jenkins.Requester.GetJSON(href, &run.Stages[i], nil); err != nil {
+			return err
+		}
+
+		run.Stages[i].Run = run
 		if matches := baseURLRegex.FindStringSubmatch(href); len(matches) > 1 {
 			run.Stages[i].Base = matches[1]
 		}
 	}
+	return nil
 }
 
 func (job *Job) GetPipelineRuns() (pr []PipelineRun, err error) {
@@ -103,8 +108,11 @@ func (job *Job) GetPipelineRuns() (pr []PipelineRun, err error) {
 		return nil, err
 	}
 	for i := range pr {
-		pr[i].update()
+		//cannot change the sequence
 		pr[i].Job = job
+		if err := pr[i].update(); err != nil {
+			return nil, err
+		}
 	}
 
 	return pr, nil
@@ -117,8 +125,10 @@ func (job *Job) GetPipelineRun(id string) (pr *PipelineRun, err error) {
 	if err != nil {
 		return nil, err
 	}
-	pr.update()
 	pr.Job = job
+	if err := pr.update(); err != nil {
+		return pr, err
+	}
 
 	return pr, nil
 }
@@ -152,7 +162,7 @@ func (pr *PipelineRun) GetNode(id string) (node *PipelineNode, err error) {
 	if err != nil {
 		return nil, err
 	}
-
+	node.Run = pr
 	return node, nil
 }
 
@@ -164,6 +174,5 @@ func (node *PipelineNode) GetLog() (log *PipelineNodeLog, err error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return log, nil
 }
